@@ -13,7 +13,8 @@ class AudioRequest(BaseModel):
     audio_format: str
     audio_base64: str
 
-@app.post("/detect")
+@app.api_route("/detect", methods=["POST", "GET"])
+
 def detect(data: AudioRequest, x_api_key: str = Header(None)):
     if x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API key")
