@@ -12,6 +12,12 @@ class AudioRequest(BaseModel):
     language: str
     audio_format: str
     audio_base64: str
+@app.get("/detect")
+def detect_probe():
+    return {
+        "status": "ok",
+        "message": "Endpoint reachable"
+    }
 
 @app.api_route("/detect", methods=["POST", "GET"])
 
