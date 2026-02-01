@@ -12,22 +12,22 @@ import librosa
 # --------------------
 app = FastAPI()
 
-# ✅ CORS (THIS FIXES 405 FROM HACKATHON PORTAL)
+# CORS (important for hackathon tester)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],   # allows OPTIONS, GET, POST
-    allow_headers=["*"],   # allows x-api-key
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # --------------------
-# API key
+# API Key (can be overridden by env variable)
 # --------------------
 API_KEY = os.getenv("API_KEY", "hackathon123")
 
 # --------------------
-# Request schema
+# Request Schema (matches tester UI)
 # --------------------
 class AudioRequest(BaseModel):
     language: str
@@ -35,62 +35,66 @@ class AudioRequest(BaseModel):
     audio_base64: str
 
 # --------------------
-# GET probe endpoint (for hackathon tester)
+# Health check endpoint (optional but useful)
 # --------------------
 @app.get("/detect")
 def detect_probe():
     return {
         "status": "ok",
-        "message": "Endpoint reachable"
+        "message": "Voice detection API is reachable"
     }
 
 # --------------------
-# POST inference endpoint (real logic)
+# Main detection endpoint
 # --------------------
 @app.post("/detect")
 def detect_audio(
     data: AudioRequest,
-    x_api_key: str = Header(None)
+    x_api_key: str = Header(None, alias="x-api-key")
 ):
-    # 🔐 API key check
+    # 🔐 API key validation
     if x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API key")
 
-    # 🔊 Decode base64 audio
+    # 🔊 Decode Base64 audio
     try:
         audio_bytes = base64.b64decode(data.audio_base64)
         audio_buffer = io.BytesIO(audio_bytes)
         y, sr = librosa.load(audio_buffer, sr=None)
-    except:
-        raise HTTPException(status_code=400, detail="Invalid audio")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid or corrupted audio")
 
-    # 🎧 Feature extraction (real signal processing)
-    zcr = np.mean(librosa.feature.zero_crossing_rate(y))
-    energy = np.var(y)
-    flatness = np.mean(librosa.feature.spectral_flatness(y=y))
+    # 🎧 Feature extraction
+    zcr = float(np.mean(librosa.feature.zero_crossing_rate(y)))
+    energy_variance = float(np.var(y))
+    spectral_flatness = float(np.mean(librosa.feature.spectral_flatness(y=y)))
 
-    # 🧠 Simple but REAL decision logic
+    # 🧠 Simple & explainable decision logic
     score = 0
     if zcr < 0.08:
         score += 1
-    if energy < 0.01:
+    if energy_variance < 0.01:
         score += 1
-    if flatness < 0.2:
+    if spectral_flatness < 0.2:
         score += 1
 
     if score >= 2:
-        prediction = "AI-Generated"
-        confidence = 0.75 + 0.05 * score
+        classification = "AI"
+        confidence = min(0.9, 0.7 + 0.05 * score)
+        explanation = (
+            "Low pitch variation and uniform spectral characteristics "
+            "suggest patterns commonly found in AI-generated speech."
+        )
     else:
-        prediction = "Human"
-        confidence = 0.55 + 0.05 * score
+        classification = "Human"
+        confidence = 0.6 + 0.05 * score
+        explanation = (
+            "Natural fluctuations in pitch and energy indicate human speech."
+        )
 
+    # ✅ Final response (EXACTLY what tester expects)
     return {
-        "prediction": prediction,
+        "classification": classification,
         "confidence": round(confidence, 2),
-        "features": {
-            "zcr": round(float(zcr), 4),
-            "energy_variance": round(float(energy), 6),
-            "spectral_flatness": round(float(flatness), 4)
-        }
+        "explanation": explanation
     }
